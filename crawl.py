@@ -1,7 +1,6 @@
 import requests
 import json
 import re
-import shutil
 from tqdm import tqdm
 
 API_KEY = "ZuK00g5OQwrnp8WTkgktU3rkw62gi5qKb0AkBmz8A16xGhov1WqDbbvOaIx10Sa3kBUqdS9hAEJJ8IS3sTpbgA=="
@@ -27,9 +26,11 @@ def fetch_all_data(endpoint):
     return all_data
 
 def extract_region(agency_name):
+    # 광역시/도 매핑
     sido_match = re.search(r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)", agency_name or "")
     region_sido = sido_match.group(1) if sido_match else "전국"
 
+    # 시군구 매핑
     sigungu_match = re.search(r"(서울|부산|대구|인천|광주|대전|울산|세종)?\s*([\w]+(시|군|구))", agency_name or "")
     region_sigungu = sigungu_match.group(2) if sigungu_match else "전국"
 
@@ -87,16 +88,10 @@ def merge_and_save():
         }
         merged.append(record)
 
-    # ✅ GitHub 경로에 저장
-    github_path = "C:/Users/admin/Documents/GitHub/project-9801/assets/benefits.json"
-    with open(github_path, "w", encoding="utf-8") as f:
+    with open("C:/Users/admin/Documents/GitHub/project-9801/assets/benefits.json", "w", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False, indent=2)
-    print(f"🎉 GitHub 경로 저장 완료 → {github_path}")
 
-    # ✅ VSCode Flutter 경로로 자동 복사
-    flutter_path = "C:/flutter_project/flutter_application_1/assets/benefits.json"
-    shutil.copyfile(github_path, flutter_path)
-    print(f"✅ VSCode 앱 경로로 복사 완료 → {flutter_path}")
+    print(f"🎉 총 {len(merged)}건 저장 완료 → assets/benefits.json")
 
 if __name__ == "__main__":
     merge_and_save()
