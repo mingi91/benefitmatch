@@ -7,6 +7,33 @@ import gzip
 API_KEY = "ZuK00g5OQwrnp8WTkgktU3rkw62gi5qKb0AkBmz8A16xGhov1WqDbbvOaIx10Sa3kBUqdS9hAEJJ8IS3sTpbgA=="
 BASE_URL = "https://api.odcloud.kr/api/gov24/v3"
 
+# 소관기관명 키워드 → 시·도 매핑
+REGION_KEYWORDS = {
+    "서울": "서울",
+    "부산": "부산",
+    "대구": "대구",
+    "인천": "인천",
+    "광주": "광주",
+    "대전": "대전",
+    "울산": "울산",
+    "세종": "세종",
+    "경기": "경기",
+    "강원": "강원",
+    "충북": "충북",
+    "충청북도": "충북",
+    "충남": "충남",
+    "충청남도": "충남",
+    "전북": "전북",
+    "전라북도": "전북",
+    "전남": "전남",
+    "전라남도": "전남",
+    "경북": "경북",
+    "경상북도": "경북",
+    "경남": "경남",
+    "경상남도": "경남",
+    "제주": "제주"
+}
+
 def fetch_all_data(endpoint):
     all_data = []
     page = 1
@@ -27,13 +54,18 @@ def fetch_all_data(endpoint):
     return all_data
 
 def extract_region(agency_name):
-    # 광역시/도 매핑
-    sido_match = re.search(r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)", agency_name or "")
-    region_sido = sido_match.group(1) if sido_match else "전국"
+    if not agency_name:
+        return "전국", "전국"
 
-    # 시군구 매핑
-    sigungu_match = re.search(r"(서울|부산|대구|인천|광주|대전|울산|세종)?\s*([\w]+(시|군|구))", agency_name or "")
-    region_sigungu = sigungu_match.group(2) if sigungu_match else "전국"
+    region_sido = "전국"
+    for keyword, sido in REGION_KEYWORDS.items():
+        if keyword in agency_name:
+            region_sido = sido
+            break
+
+    # 시군구 이름 추출 (시·군·구 로 끝나는 단어)
+    sigungu_match = re.search(r"([\w]+(시|군|구))", agency_name)
+    region_sigungu = sigungu_match.group(1) if sigungu_match else "전국"
 
     return region_sido, region_sigungu
 
@@ -89,7 +121,6 @@ def merge_and_save():
         }
         merged.append(record)
 
-    # benefits.json.gz → benefitmatch repo로 바로 저장
     output_path = "C:/Users/admin/Documents/GitHub/benefitmatch/benefits.json.gz"
     with gzip.open(output_path, "wt", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False)
