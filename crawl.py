@@ -2,6 +2,7 @@ import requests
 import json
 import re
 from tqdm import tqdm
+import gzip
 
 API_KEY = "ZuK00g5OQwrnp8WTkgktU3rkw62gi5qKb0AkBmz8A16xGhov1WqDbbvOaIx10Sa3kBUqdS9hAEJJ8IS3sTpbgA=="
 BASE_URL = "https://api.odcloud.kr/api/gov24/v3"
@@ -88,10 +89,12 @@ def merge_and_save():
         }
         merged.append(record)
 
-    with open("C:/Users/admin/Documents/GitHub/project-9801/assets/benefits.json", "w", encoding="utf-8") as f:
-        json.dump(merged, f, ensure_ascii=False, indent=2)
+    # benefits.json.gz → benefitmatch repo로 바로 저장
+    output_path = "C:/Users/admin/Documents/GitHub/benefitmatch/benefits.json.gz"
+    with gzip.open(output_path, "wt", encoding="utf-8") as f:
+        json.dump(merged, f, ensure_ascii=False)
 
-    print(f"🎉 총 {len(merged)}건 저장 완료 → assets/benefits.json")
+    print(f"🎉 총 {len(merged)}건 저장 완료 → {output_path} (gzip 압축)")
 
 if __name__ == "__main__":
     merge_and_save()
