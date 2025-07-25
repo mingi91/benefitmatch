@@ -7,7 +7,7 @@ import gzip
 API_KEY = "ZuK00g5OQwrnp8WTkgktU3rkw62gi5qKb0AkBmz8A16xGhov1WqDbbvOaIx10Sa3kBUqdS9hAEJJ8IS3sTpbgA=="
 BASE_URL = "https://api.odcloud.kr/api/gov24/v3"
 
-# 시군구 보정 테이블
+# 시군구 → 시도 매핑 테이블
 SIGUNGU_TO_SIDO = {
     # 서울
     "종로": "서울", "중구": "서울", "용산": "서울", "성동": "서울", "광진": "서울", "동대문": "서울",
@@ -58,19 +58,19 @@ def fetch_all_data(endpoint):
     return all_data
 
 def extract_region(agency_name):
-    # 시도명 직접 매칭
-    sido_match = re.search(r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)", agency_name or "")
+    if not agency_name:
+        return "전국", "전국"
+
+    # 1) 시군구 보정 테이블에서 키워드 매칭
+    for key, sido in SIGUNGU_TO_SIDO.items():
+        if key in agency_name:
+            return sido, key
+
+    # 2) 시도명 직접 매칭
+    sido_match = re.search(r"(서울|부산|대구|인천|광주|대전|울산|세종|경기|강원|충북|충남|전북|전남|경북|경남|제주)", agency_name)
     region_sido = sido_match.group(1) if sido_match else "전국"
 
-    # 시군구명 추출
-    sigungu_match = re.search(r"([\w]+(시|군|구))", agency_name or "")
-    sigungu_name = sigungu_match.group(1)[:-1] if sigungu_match else ""
-
-    # 보정 테이블 확인
-    if sigungu_name and sigungu_name in SIGUNGU_TO_SIDO:
-        region_sido = SIGUNGU_TO_SIDO[sigungu_name]
-
-    return region_sido, sigungu_name or "전국"
+    return region_sido, "전국"
 
 def merge_and_save():
     print("✅ 서비스 목록 불러오는 중...")
