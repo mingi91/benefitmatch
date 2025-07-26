@@ -11,12 +11,12 @@ BASE_URL = "https://api.odcloud.kr/api/gov24/v3"
 def fetch_all_data(endpoint):
     all_data = []
     page = 1
-    per_page = 1000
+    per_page = 500  # 기존 1000 → 500으로 줄임
     while True:
         url = f"{BASE_URL}/{endpoint}?page={page}&perPage={per_page}&serviceKey={API_KEY}"
         response = requests.get(url)
         if response.status_code != 200:
-            print(f"❌ {endpoint} 오류: {response.status_code}")
+            print(f"❌ {endpoint} 오류: {response.status_code}, page={page}")
             break
         data = response.json()
         if "data" not in data or not data["data"]:
@@ -96,6 +96,7 @@ REGION_KEYWORDS = {
     "해운대구": "부산", "해운대": "부산","금정구": "부산","금정": "부산", "기장군": "부산","기장": "부산","동래구": "부산","동래": "부산","부산진구": "부산","사상구": "부산","사상": "부산","사하구": "부산","사하": "부산", 
     "수영구": "부산","수영": "부산","연제구": "부산","연제": "부산","영도구": "부산","영도": "부산",
     "광산구": "광주","광산": "광주","대덕구": "대전","대덕": "대전","유성구": "대전","유성": "대전", "울주군": "울산","울주": "울산",
+    "미추홀구": "인천", "미추홀": "인천", "연수구": "인천", "연수": "인천", "부평구": "인천", "부평": "인천", "계양구": "인천", "계양": "인천", "강화군": "인천", "강화": "인천", "옹진군": "인천", "옹진": "인천", "남동구": "인천", "남동": "인천",
 
     # 모호 → 전국 처리 필요
     "중구": "전국","남구": "전국","동구": "전국","서구": "전국","북구": "전국"
@@ -161,12 +162,12 @@ def merge_and_save():
     print("✅ 상세 내용 불러오는 중...")
     detail_list = fetch_all_data("serviceDetail")
 
-    print("✅ 조건 정보 불러오는 중...")
-    condition_list = fetch_all_data("supportConditions")
+# print("✅ 조건 정보 불러오는 중...")  # 호출 제거
+# condition_list = fetch_all_data("supportConditions")
 
     print("✅ 병합 중...")
     detail_map = {d["서비스ID"]: d for d in detail_list if "서비스ID" in d}
-    condition_map = {c["서비스ID"]: c for c in condition_list if "서비스ID" in c}
+    condition_map = {}  # 항상 빈 dict
 
     merged = []
     for s in tqdm(service_list):
