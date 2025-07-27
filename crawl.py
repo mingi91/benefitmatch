@@ -40,7 +40,7 @@ REGION_KEYWORDS = {
     # 경기도
     "수원시": "경기","수원": "경기","성남시": "경기","성남": "경기","고양시": "경기","고양": "경기","용인시": "경기","용인": "경기","부천시": "경기","부천": "경기","안산시": "경기","안산": "경기",
     "안양시": "경기","안양": "경기","남양주시": "경기","남양주": "경기","화성시": "경기","화성": "경기","평택시": "경기","평택": "경기","의정부시": "경기","의정부": "경기","시흥시": "경기","시흥": "경기",
-    "파주시": "경기","파주": "경기","김포시": "경기","김포": "경기","광명시": "경기","광명": "경기","광주시": "경기","광주": "경기","군포시": "경기","군포": "경기","이천시": "경기","이천": "경기",
+    "파주시": "경기","파주": "경기","김포시": "경기","김포": "경기","광명시": "경기","광명": "경기","군포시": "경기","군포": "경기","이천시": "경기","이천": "경기",
     "오산시": "경기","오산": "경기","양주시": "경기","양주": "경기","구리시": "경기","구리": "경기","안성시": "경기","안성": "경기","포천시": "경기","포천": "경기","의왕시": "경기","의왕": "경기",
     "하남시": "경기","하남": "경기","여주시": "경기","여주": "경기","양평군": "경기","양평": "경기","가평군": "경기","가평": "경기","연천군": "경기","연천": "경기",
 
@@ -105,16 +105,25 @@ REGION_KEYWORDS = {
 AMBIGUOUS_NAMES = {"중구", "남구", "동구", "서구", "북구"}
 
 # ---------------- extract_region ----------------
-def extract_region(agency_name: str):
+def extract_region(agency_name: str, phone: str = ""):
     if not agency_name:
         return "전국", "전국"
 
-    # 1) 시/도명 직접 포함
+    # 1) 광주 특별 처리 (전화번호 기반)
+    if "광주" in agency_name:
+        if phone and phone.startswith("031"):
+            return "경기", "광주시"   # 경기도 광주
+        elif phone and phone.startswith("062"):
+            return "광주", "광주광역시"  # 광주광역시
+        # 전화번호 없으면 광주광역시 기본 처리
+        return "광주", "광주광역시"
+
+    # 2) 시/도명 직접 포함
     for keyword, sido in REGION_KEYWORDS.items():
         if keyword in agency_name:
             return sido, keyword if keyword not in AMBIGUOUS_NAMES else "전국"
 
-    # 2) ○○시/군/구 추출
+    # 3) ○○시/군/구 추출
     match = re.search(r"([가-힣]{2,}(시|군|구))", agency_name)
     if match:
         sigungu = match.group(1)
@@ -122,17 +131,17 @@ def extract_region(agency_name: str):
             return "전국", sigungu
         return REGION_KEYWORDS.get(sigungu, "전국"), sigungu
 
-    # 3) 기관명 전체에서 두 글자 이상 키워드 탐색
+    # 4) 기관명 전체에서 두 글자 이상 키워드 탐색
     for keyword, sido in REGION_KEYWORDS.items():
         if len(keyword) >= 2 and keyword in agency_name:
             if keyword in AMBIGUOUS_NAMES:
                 return "전국", "전국"
             return sido, keyword
 
-    # 4) 기본값
+    # 5) 기본값
     return "전국", "전국"
 
-# ---------------- detect_region_from_target (지원대상 보조) ----------------
+# ---------------- detect_region_from_target ----------------
 def detect_region_from_target(target_text: str):
     if not target_text:
         return None
@@ -141,16 +150,13 @@ def detect_region_from_target(target_text: str):
             return sido
     return None
 
-# ---------------- extract_region_with_target (보완판) ----------------
-def extract_region_with_target(agency_name: str, target_text: str):
-    region_sido, region_sigungu = extract_region(agency_name)
-
-    # 보완 로직: 전국 또는 매핑 실패일 때 지원대상으로 보정
+# ---------------- extract_region_with_target ----------------
+def extract_region_with_target(agency_name: str, target_text: str, phone: str = ""):
+    region_sido, region_sigungu = extract_region(agency_name, phone)
     if region_sido == "전국" or not region_sido:
         target_region = detect_region_from_target(target_text)
         if target_region:
             region_sido = target_region
-
     return region_sido, region_sigungu
 
 # ---------------- merge_and_save ----------------
@@ -162,12 +168,9 @@ def merge_and_save():
     print("✅ 상세 내용 불러오는 중...")
     detail_list = fetch_all_data("serviceDetail")
 
-# print("✅ 조건 정보 불러오는 중...")  # 호출 제거
-# condition_list = fetch_all_data("supportConditions")
-
     print("✅ 병합 중...")
     detail_map = {d["서비스ID"]: d for d in detail_list if "서비스ID" in d}
-    condition_map = {}  # 항상 빈 dict
+    condition_map = {}
 
     merged = []
     for s in tqdm(service_list):
@@ -175,10 +178,11 @@ def merge_and_save():
         detail = detail_map.get(sid, {})
         condition = condition_map.get(sid, {})
 
-       # 수정 포인트: 지원대상 보정 로직 적용
+        # 수정: 전화번호 기반 보정 추가
         region_sido, region_sigungu = extract_region_with_target(
             s.get("소관기관명", ""),
-            s.get("지원대상", "")
+            s.get("지원대상", ""),
+            s.get("전화문의", "")
         )
 
         record = {
