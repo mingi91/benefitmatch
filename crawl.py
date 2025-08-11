@@ -1,22 +1,32 @@
 import requests
 import json
 import re
-from tqdm import tqdm
 import gzip
+from tqdm import tqdm
+from datetime import datetime
+import google.auth
+from google.oauth2 import service_account
+import google.auth.transport.requests
+import os
 
+# ---------------- 기본 설정 ----------------
 API_KEY = "ZuK00g5OQwrnp8WTkgktU3rkw62gi5qKb0AkBmz8A16xGhov1WqDbbvOaIx10Sa3kBUqdS9hAEJJ8IS3sTpbgA=="
 BASE_URL = "https://api.odcloud.kr/api/gov24/v3"
+OUTPUT_PATH = "C:/Users/admin/Documents/GitHub/benefitmatch/benefits.json.gz"
+SERVICE_ACCOUNT_FILE = "firebase_service_key.json"  # Firebase 서비스 계정 키 경로
+PROJECT_ID = "benefitmatch-bc1ab"  # ★Firebase 콘솔에서 프로젝트 ID 입력
 
 # ---------------- fetch_all_data ----------------
 def fetch_all_data(endpoint):
     all_data = []
     page = 1
-    per_page = 500  # 기존 1000 → 500으로 줄임
+    per_page = 500
     while True:
         url = f"{BASE_URL}/{endpoint}?page={page}&perPage={per_page}&serviceKey={API_KEY}"
         response = requests.get(url)
         if response.status_code != 200:
             print(f"❌ {endpoint} 오류: {response.status_code}, page={page}")
+            print("응답 내용:", response.text)  # ← 추가 (에러 내용 확인)
             break
         data = response.json()
         if "data" not in data or not data["data"]:
@@ -47,7 +57,7 @@ REGION_KEYWORDS = {
     # 강원도
     "춘천시": "강원","춘천": "강원","원주시": "강원","원주": "강원","강릉시": "강원","강릉": "강원","동해시": "강원","동해": "강원","태백시": "강원","태백": "강원","속초시": "강원","속초": "강원",
     "삼척시": "강원","삼척": "강원","홍천군": "강원","홍천": "강원","횡성군": "강원","횡성": "강원","영월군": "강원","영월": "강원","평창군": "강원","평창": "강원","정선군": "강원","정선": "강원",
-    "철원군": "강원","철원": "강원","화천군": "강원","화천": "강원","양구군": "강원","양구": "강원","인제군": "강원","인제": "강원","고성군": "강원","고성": "강원","양양군": "강원","양양": "강원",
+    "철원군": "강원","철원": "강원","화천군": "강원","화천": "강원","양구군": "강원","양구": "강원","인제군": "강원","인제": "강원","고성군": "강원","고성": "강원","양양군": "강원","양양": "강원","원덕읍": "강원", "원덕": "강원",
 
     # 충청북도
     "청주시": "충북","청주": "충북","충주시": "충북","충주": "충북","제천시": "충북","제천": "충북","보은군": "충북","보은": "충북","옥천군": "충북","옥천": "충북","영동군": "충북","영동": "충북",
@@ -103,6 +113,34 @@ REGION_KEYWORDS = {
 }
 
 AMBIGUOUS_NAMES = {"중구", "남구", "동구", "서구", "북구"}
+
+# ---------------- topicMap (앱과 동일하게) ----------------
+TOPIC_MAP = {
+    '지역 전체 혜택': 'all',
+    '서울': 'seoul',
+    '부산': 'busan',
+    '대구': 'daegu',
+    '인천': 'incheon',
+    '광주': 'gwangju',
+    '대전': 'daejeon',
+    '울산': 'ulsan',
+    '세종': 'sejong',
+    '경기': 'gyeonggi',
+    '강원': 'gangwon',
+    '충북': 'chungbuk',
+    '충남': 'chungnam',
+    '전북': 'jeonbuk',
+    '전남': 'jeonnam',
+    '경북': 'gyeongbuk',
+    '경남': 'gyeongnam',
+    '제주': 'jeju',
+}
+
+def get_topic_name(region_sido):
+    if region_sido == "전국":
+        return "nation"
+    code = TOPIC_MAP.get(region_sido, "all")
+    return f"region_{code}"
 
 # ---------------- extract_region ----------------
 def extract_region(agency_name: str, phone: str = ""):
@@ -178,7 +216,6 @@ def merge_and_save():
         detail = detail_map.get(sid, {})
         condition = condition_map.get(sid, {})
 
-        # 수정: 전화번호 기반 보정 추가
         region_sido, region_sigungu = extract_region_with_target(
             s.get("소관기관명", ""),
             s.get("지원대상", ""),
@@ -214,12 +251,115 @@ def merge_and_save():
         }
         merged.append(record)
 
-    output_path = "C:/Users/admin/Documents/GitHub/benefitmatch/benefits.json.gz"
-    with gzip.open(output_path, "wt", encoding="utf-8") as f:
+    with gzip.open(OUTPUT_PATH, "wt", encoding="utf-8") as f:
         json.dump(merged, f, ensure_ascii=False)
 
-    print(f"🎉 총 {len(merged)}건 저장 완료 → {output_path} (gzip 압축)")
+    print(f"🎉 총 {len(merged)}건 저장 완료 → {OUTPUT_PATH} (gzip 압축)")
+    return merged
+
+def load_existing_ids():
+    """기존 benefits.json.gz에서 id 목록 불러오기"""
+    if not os.path.exists(OUTPUT_PATH):
+        return set()
+    with gzip.open(OUTPUT_PATH, "rt", encoding="utf-8") as f:
+        data = json.load(f)
+    return {b["id"] for b in data}
+# ---------------- Firebase Access Token ----------------
+def get_access_token():
+    credentials = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE,
+        scopes=["https://www.googleapis.com/auth/firebase.messaging"],
+    )
+    request = google.auth.transport.requests.Request()
+    credentials.refresh(request)
+    return credentials.token
+
+# ---------------- Firebase HTTP 알림 ----------------
+def send_fcm_http_v1(topic, title, body):
+    access_token = get_access_token()
+    url = f"https://fcm.googleapis.com/v1/projects/{PROJECT_ID}/messages:send"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json; UTF-8",
+    }
+    payload = {
+        "message": {
+            "topic": topic,
+            "notification": {
+                "title": title,
+                "body": body
+            }
+        }
+    }
+    response = requests.post(url, headers=headers, json=payload)
+    print(f"FCM HTTP 응답({topic}): {response.status_code} {response.text}")
+
+# ---------------- 신규 혜택 처리 ----------------
+def is_same_day(date_str):
+    """YYYYMMDD[HHMMSS] 형식 앞 8자리로 오늘 여부 판단"""
+    if not date_str:
+        return False
+    try:
+        return str(date_str)[:8] == datetime.now().strftime("%Y%m%d")
+    except Exception as e:
+        print(f"날짜 파싱 실패: {date_str}, {e}")
+        return False
+
+def notify_new_benefits(benefits):
+    # 1) 지역별(전국 제외) 시·도 집합
+    region_sidos = sorted({
+        b.get("regionSido")
+        for b in benefits
+        if b.get("regionSido") and b.get("regionSido") != "전국"
+    })
+
+    # 2) 지역별 각 1회 (제목에 시·도명 표시)
+    for sido in region_sidos:
+        topic = get_topic_name(sido)  # ex) region_busan
+        send_fcm_http_v1(topic, f"{sido} 신규 혜택이 등록됐어요!", "지금 확인해보세요.")
+
+    # 3) 지역 신규가 1개라도 있으면 region_all 1회 (라벨 명확화)
+    if region_sidos:
+        send_fcm_http_v1("region_all", "전체 지역 신규 혜택이 등록됐어요!", "지금 확인해보세요.")
+
+    # 4) 전국 운영 혜택이 있으면 nation 1회 (라벨 명확화)
+    if any(b.get("regionSido") == "전국" for b in benefits):
+        send_fcm_http_v1("nation", "전국 운영 혜택이 등록됐어요!", "지금 확인해보세요.")
 
 # ---------------- main ----------------
 if __name__ == "__main__":
-    merge_and_save()
+    existing_ids = load_existing_ids()   # 이전 파일의 ID들
+    is_bootstrap = (len(existing_ids) == 0)   # ✅ 추가: 초기 실행 여부 표시
+
+    new_data = merge_and_save()          # 새로 크롤링/병합된 전체 데이터
+
+    # 1) 파일 기준 '처음 발견된' 신규 (등록일과 무관)
+    newly_discovered = [b for b in new_data if b["id"] not in existing_ids]
+
+    # ✅ 추가: 초기 실행이면 '처음 발견' 제외해 대량 건수 방지
+    if is_bootstrap:
+        print("초기 실행 감지 → 오늘 등록분만 알림(처음발견 제외)")
+        newly_discovered = []
+
+    # 2) 오늘 '등록'된 항목 (이미 있던 것도 포함)
+    today_registered = [b for b in new_data if is_same_day(b.get("registerDate", ""))]
+
+    # 3) 알림 후보: (처음 발견) ∪ (오늘 등록)
+    candidates_by_id = {}
+    for b in newly_discovered + today_registered:
+        candidates_by_id[b["id"]] = b
+    candidates = list(candidates_by_id.values())
+
+    # 디버그 로그
+    print(
+        f"처음발견:{len(newly_discovered)} / 오늘등록:{len(today_registered)} "
+        f"→ 알림대상 합계:{len(candidates)}"
+    )
+    if newly_discovered[:5]:
+        print("샘플 처음발견 ID:", [b["id"] for b in newly_discovered[:5]])
+
+    if candidates:
+        print(f"알림 대상 {len(candidates)}건 → FCM 전송")
+        notify_new_benefits(candidates)
+    else:
+        print("신규/갱신 없음 → 알림 생략")
